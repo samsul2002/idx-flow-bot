@@ -1,3 +1,4 @@
 pyTelegramBotAPI
-yfinance
-requests
+idx-bei
+curl_cffi
+pandas
