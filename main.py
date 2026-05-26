@@ -3,30 +3,31 @@ import telebot
 import yfinance as yf
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# ========== KONFIGURASI ==========
-TOKEN = os.environ.get("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("BOT_TOKEN tidak ditemukan! Set di Railway Environment Variables.")
+# ========== GANTI 2 BARIS INI ==========
+TOKEN = "8797179260:AAHdz4dCQJiEqcnTqhvhiytIz0A8GKZZvO8"  # Ganti dengan token dari @BotFather
+ADMIN_ID = 8185636936  # Ganti dengan ID Telegram kamu (dapatkan dari @userinfobot)
+# ======================================
 
 bot = telebot.TeleBot(TOKEN)
 
-# Hapus webhook biar polling mode jalan di Railway
+# Hapus webhook biar polling mode jalan
 try:
     bot.remove_webhook()
 except:
     pass
 
-# Daftar saham Indo yang akan dipantau
+# Daftar saham yang dipantau
 STOCK_LIST = {
     "BBCA": "BBCA.JK", "BBRI": "BBRI.JK", "BMRI": "BMRI.JK", "TLKM": "TLKM.JK",
     "ASII": "ASII.JK", "ADRO": "ADRO.JK", "UNVR": "UNVR.JK", "ICBP": "ICBP.JK",
-    "GOTO": "GOTO.JK", "ANTM": "ANTM.JK", "BYAN": "BYAN.JK", "CPIN": "CPIN.JK",
-    "PGAS": "PGAS.JK", "MEDC": "MEDC.JK", "ERAA": "ERAA.JK"
+    "GOTO": "GOTO.JK", "ANTM": "ANTM.JK", "BYAN": "BYAN.JK", "CPIN": "CPIN.JK"
 }
 
-# ========== FUNGSI AMBIL DATA REAL-TIME ==========
+def cek_user(user_id):
+    return user_id == ADMIN_ID
+
 def get_flow_realtime():
     """Ambil data real-time dari Yahoo Finance"""
     results = {"asing": 0, "domestik": 0, "detail": [], "timestamp": datetime.now()}
@@ -43,10 +44,9 @@ def get_flow_realtime():
             if volume == 0:
                 continue
                 
-            value = volume * current / 1e9  # dalam Miliar Rupiah
+            value = volume * current / 1e9
             change = ((current - prev_close) / prev_close) * 100
             
-            # Estimasi flow: Asing ~40%, Domestik ~60%
             flow_asing = value * 0.4 if change > 0 else -value * 0.4
             flow_domestik = value * 0.6 if change > 0 else -value * 0.6
             
@@ -60,8 +60,7 @@ def get_flow_realtime():
                 "volume": int(volume / 1e6),
                 "flow": flow_asing + flow_domestik
             })
-        except Exception as e:
-            print(f"Error {kode}: {e}")
+        except:
             continue
     
     results["net"] = results["asing"] + results["domestik"]
@@ -69,11 +68,9 @@ def get_flow_realtime():
     return results
 
 def format_rupiah(nilai):
-    return f"{nilai:+.1f} M".replace("+-", "-")
+    return f"{nilai:+.1f}M".replace("+-", "-")
 
-# ========== DATA HISTORIS (Mock untuk sementara) ==========
 def get_historical_data(periode):
-    """Data historis simulasi - nanti bisa diganti dengan yfinance history"""
     data = {
         "kemarin": {"asing": -150.2, "domestik": 100.5, "net": -49.7},
         "seminggu": {"asing": -850.1, "domestik": 420.3, "net": -429.8},
@@ -84,11 +81,15 @@ def get_historical_data(periode):
 # ========== COMMAND TELEGRAM ==========
 @bot.message_handler(commands=['start', 'help'])
 def send_help(message):
+    if not cek_user(message.chat.id):
+        bot.reply_to(message, "❌ Maaf, bot ini hanya untuk admin.")
+        return
+    
     help_text = """
 📊 *IDX FLOW MONITOR - REAL TIME*
 
 /flow – Arus hari ini (real-time)
-/kemarin – Data closing kemarin
+/kemarin – Data kemarin
 /seminggu – Akumulasi 7 hari
 /sebulan – Akumulasi 30 hari
 /top – Top 10 saham teraktif
@@ -97,13 +98,14 @@ def send_help(message):
 /domestik – Net domestik hari ini
 /refresh on/off – Auto-update tiap 30 detik
 /help – Bantuan
-
-*Sumber:* Yahoo Finance (real-time)
     """
     bot.reply_to(message, help_text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['flow'])
 def flow_realtime(message):
+    if not cek_user(message.chat.id):
+        return
+    
     data = get_flow_realtime()
     
     text = f"""📈 *IDX Flow Monitor - LIVE*
@@ -118,51 +120,64 @@ def flow_realtime(message):
 """
     for i, s in enumerate(data['detail'][:3], 1):
         arrow = "🟢" if s['perubahan'] > 0 else "🔴"
-        text += f"{i}. {s['kode']} {arrow} Rp{s['harga']:,.0f} ({s['perubahan']:+.1f}%) | Vol {s['volume']}M\n"
+        text += f"{i}. {s['kode']} {arrow} Rp{s['harga']:,.0f} ({s['perubahan']:+.1f}%)\n"
     
     bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['asing'])
 def net_asing(message):
+    if not cek_user(message.chat.id):
+        return
     data = get_flow_realtime()
-    text = f"🌏 *Net Foreign*: {format_rupiah(data['asing'])}"
-    bot.reply_to(message, text, parse_mode='Markdown')
+    bot.reply_to(message, f"🌏 *Net Foreign*: {format_rupiah(data['asing'])}", parse_mode='Markdown')
 
 @bot.message_handler(commands=['domestik'])
 def net_domestik(message):
+    if not cek_user(message.chat.id):
+        return
     data = get_flow_realtime()
-    text = f"🏦 *Net Domestik*: {format_rupiah(data['domestik'])}"
-    bot.reply_to(message, text, parse_mode='Markdown')
+    bot.reply_to(message, f"🏦 *Net Domestik*: {format_rupiah(data['domestik'])}", parse_mode='Markdown')
 
 @bot.message_handler(commands=['kemarin'])
 def flow_kemarin(message):
+    if not cek_user(message.chat.id):
+        return
     data = get_historical_data("kemarin")
     text = f"📅 *Kemarin*\nAsing: {format_rupiah(data['asing'])}\nDomestik: {format_rupiah(data['domestik'])}\nNet: {format_rupiah(data['net'])}"
     bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['seminggu'])
 def flow_seminggu(message):
+    if not cek_user(message.chat.id):
+        return
     data = get_historical_data("seminggu")
     text = f"📆 *7 Hari Terakhir*\nAsing: {format_rupiah(data['asing'])}\nDomestik: {format_rupiah(data['domestik'])}\nNet: {format_rupiah(data['net'])}"
     bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['sebulan'])
 def flow_sebulan(message):
+    if not cek_user(message.chat.id):
+        return
     data = get_historical_data("sebulan")
     text = f"📆 *30 Hari Terakhir*\nAsing: {format_rupiah(data['asing'])}\nDomestik: {format_rupiah(data['domestik'])}\nNet: {format_rupiah(data['net'])}"
     bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['top'])
 def top_10(message):
+    if not cek_user(message.chat.id):
+        return
     data = get_flow_realtime()
     text = "🏆 *Top 10 Flow Saham Hari Ini*\n\n"
     for i, s in enumerate(data['detail'][:10], 1):
         arrow = "🟢" if s['flow'] > 0 else "🔴"
-        text += f"{i}. {s['kode']} {arrow} {format_rupiah(s['flow'])} | Rp{s['harga']:,.0f}\n"
+        text += f"{i}. {s['kode']} {arrow} {format_rupiah(s['flow'])}\n"
     bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['saham'])
 def detail_saham(message):
+    if not cek_user(message.chat.id):
+        return
+    
     try:
         kode = message.text.split()[1].upper()
         ticker = f"{kode}.JK"
@@ -174,24 +189,19 @@ def detail_saham(message):
         change = ((price - prev_close) / prev_close) * 100
         volume = info.get('volume', 0)
         market_cap = info.get('marketCap', 0) / 1e12
-        day_high = info.get('dayHigh', price)
-        day_low = info.get('dayLow', price)
         
         text = f"""📊 *{kode} - Detail Real-Time*
 
 💰 Harga: Rp {price:,.0f}
 📊 Perubahan: {change:+.2f}%
-📈 Hari ini: Rp {day_low:,.0f} - Rp {day_high:,.0f}
 📦 Volume: {volume/1e6:.1f}M lot
 🏛️ Market Cap: Rp {market_cap:.2f}T
 
-🕐 Update: {datetime.now().strftime('%H:%M:%S')} WIB
+🕐 {datetime.now().strftime('%H:%M:%S')} WIB
 """
         bot.reply_to(message, text, parse_mode='Markdown')
-    except IndexError:
-        bot.reply_to(message, "❌ Gunakan: /saham KODE (contoh: /saham BBCA)")
-    except Exception as e:
-        bot.reply_to(message, f"❌ Gagal ambil data saham {kode}. Cek kode atau coba lagi.")
+    except:
+        bot.reply_to(message, "❌ Gunakan: /saham BBCA")
 
 # ========== AUTO REFRESH ==========
 refresh_status = {}
@@ -204,9 +214,7 @@ def auto_refresh(chat_id):
         perubahan_asing = abs(data['asing'] - last.get('asing', 0))
         
         if perubahan_asing > 30 or not last:
-            text = f"⏰ *UPDATE* ({datetime.now().strftime('%H:%M:%S')})\n"
-            text += f"🌏 Asing: {format_rupiah(data['asing'])}\n"
-            text += f"📊 NET: {format_rupiah(data['net'])}"
+            text = f"⏰ *UPDATE* ({datetime.now().strftime('%H:%M:%S')})\n🌏 Asing: {format_rupiah(data['asing'])}\n📊 NET: {format_rupiah(data['net'])}"
             bot.send_message(chat_id, text, parse_mode='Markdown')
             last_data[chat_id] = data
         
@@ -214,6 +222,9 @@ def auto_refresh(chat_id):
 
 @bot.message_handler(commands=['refresh'])
 def set_auto_refresh(message):
+    if not cek_user(message.chat.id):
+        return
+    
     user_id = message.chat.id
     try:
         cmd = message.text.split()[1].lower()
@@ -234,6 +245,5 @@ def set_auto_refresh(message):
 
 # ========== JALANKAN BOT ==========
 if __name__ == "__main__":
-    print("🤖 Bot IDX Flow Monitor berjalan di Railway...")
-    print(f"Bot @{bot.get_me().username} aktif!")
+    print("🤖 Bot IDX Flow Monitor berjalan...")
     bot.infinity_polling()
