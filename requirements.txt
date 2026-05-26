@@ -1,4 +1,3 @@
 pyTelegramBotAPI
-idx-bei
-curl_cffi
-pandas
+requests
+beautifulsoup4
